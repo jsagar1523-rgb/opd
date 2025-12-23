@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clinic OPD</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-512.png">
+<meta name="theme-color" content="#0f766e">
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:system-ui,-apple-system,Segoe UI,Roboto;
+  background:#f4f6fb;
+  padding:10px;
+}
+body>*{max-width:480px;margin:auto}
+h1{text-align:center;font-size:22px;margin:14px 0}
+
+.card{
+  background:#fff;
+  border-radius:14px;
+  padding:14px;
+  margin-bottom:14px;
+  box-shadow:0 4px 12px rgba(0,0,0,.08);
+}
+
+label{font-weight:600;font-size:14px}
+input,button{
+  width:100%;
+  padding:12px;
+  margin-top:10px;
+  border-radius:10px;
+  border:1px solid #ccc;
+  font-size:15px;
+}
+
+button{border:none;font-weight:600;cursor:pointer}
+.primary{background:#2563eb;color:#fff}
+.collect{background:#16a34a;color:#fff;margin-bottom:6px}
+.delete{background:#dc2626;color:#fff}
+.export{background:#7c3aed;color:#fff}
+.danger{background:#b91c1c;color:#fff}
+
+.queue-item{
+  background:#eef2ff;
+  padding:10px;
+  border-radius:10px;
+  margin-top:8px;
+  font-size:14px;
+}
+
+table{width:100%;display:block}
+tbody tr{display:block;border-bottom:1px solid #ddd;padding:8px 0}
+td{
+  display:flex;
+  justify-content:space-between;
+  padding:4px 0;
+  font-size:13px;
+}
+td::before{font-weight:600;color:#555}
+td:nth-child(1)::before{content:"Date"}
+td:nth-child(2)::before{content:"Token"}
+td:nth-child(3)::before{content:"Name"}
+td:nth-child(4)::before{content:"Mobile"}
+td:nth-child(5)::before{content:"Status"}
+td:nth-child(6)::before{content:"Fees"}
+td:nth-child(7)::before{content:"Action"}
+
+.total{font-weight:700;margin-top:10px}
+
+/* POPUPS */
+.overlay{
+  display:none;
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.4);
+  align-items:center;
+  justify-content:center;
+  z-index:9999;
+}
+.popup{
+  background:#fff;
+  padding:18px;
+  border-radius:12px;
+  width:90%;
+  max-width:280px;
+  text-align:center;
+}
+.popup input{
+  width:100%;
+  padding:10px;
+  margin-bottom:12px;
+}
+.popup button{
+  width:45%;
+  padding:10px;
+  margin:4px;
+}
+.cancel{background:#ccc}
+.ok{background:#16a34a;color:#fff}
+</style>
+</head>
+
+<body>
+
+<h1>Clinic OPD System</h1>
+
+<div class="card">
+  <label>Doctor Name</label>
+  <input id="doctor" placeholder="Doctor Name">
+</div>
+
+<div class="card">
+  <h3>Add Patient</h3>
+  <input id="pname" placeholder="Patient Name">
+  <input id="pmobile" placeholder="Mobile Number">
+  <button class="primary" onclick="addPatient()">Generate Token</button>
+</div>
+
+<div class="card">
+  <h3>Today Queue</h3>
+  <div id="queue"></div>
+</div>
+
+<div class="card">
+  <h3>Patient Records</h3>
+  <table><tbody id="records"></tbody></table>
+
+  <div class="total">
+    Today Collection: ₹ <span id="total">0</span>
+  </div>
+
+  <button class="export" onclick="exportCSV()">Download Report</button>
+</div>
+
+<div class="card">
+  <button class="danger" onclick="startNewDay()">Start New Day</button>
+</div>
+
+<!-- Fee Popup -->
+<div id="feeBox" class="overlay">
+  <div class="popup">
+    <p>Enter Fees</p>
+    <input id="feeInput" type="number">
+    <button class="cancel" onclick="closeFee()">Cancel</button>
+    <button class="ok" onclick="confirmFee()">OK</button>
+  </div>
+</div>
+
+<!-- New Day Popup (NO OK, ONLY DELETE + CANCEL) -->
+<div id="dayBox" class="overlay">
+  <div class="popup">
+    <p>Start new day?</p>
+    <button class="cancel" onclick="closeDay()">Cancel</button>
+    <button class="danger" onclick="confirmDay()">Delete</button>
+  </div>
+</div>
+
+<script>
+let data = JSON.parse(localStorage.getItem("opd")) || {token:1,records:[]}
+let feeIndex=null
+
+function save(){
+  localStorage.setItem("opd",JSON.stringify(data))
+  render()
+}
+
+function addPatient(){
+  if(!pname.value.trim()) return
+  data.records.push({
+    date:new Date().toLocaleDateString(),
+    token:data.token++,
+    name:pname.value,
+    mobile:pmobile.value,
+    status:"Pending",
+    fees:0
+  })
+  pname.value="";pmobile.value=""
+  save()
+}
+
+function render(){
+  queue.innerHTML=""
+  records.innerHTML=""
+  let total=0
+
+  data.records.forEach((r,i)=>{
+    if(r.status==="Pending"){
+      queue.innerHTML+=`<div class="queue-item">Token ${r.token} - ${r.name}</div>`
+    }
+
+    records.innerHTML+=`
+    <tr>
+      <td>${r.date}</td>
+      <td>${r.token}</td>
+      <td>${r.name}</td>
+      <td>${r.mobile}</td>
+      <td>${r.status}</td>
+      <td>${r.fees || "-"}</td>
+      <td>
+        ${r.status==="Pending" ? `<button class="collect" onclick="openFee(${i})">Collect</button>` : ""}
+        <button class="delete" onclick="deleteRow(${i})">Delete</button>
+      </td>
+    </tr>`
+
+    if(r.status==="Paid") total+=Number(r.fees)
+  })
+
+  totalSpan.innerText=total
+}
+
+function openFee(i){
+  feeIndex=i
+  feeInput.value=""
+  feeBox.style.display="flex"
+}
+function closeFee(){
+  feeBox.style.display="none"
+}
+function confirmFee(){
+  if(!feeInput.value) return
+  data.records[feeIndex].fees=feeInput.value
+  data.records[feeIndex].status="Paid"
+  closeFee()
+  save()
+}
+
+function deleteRow(i){
+  data.records.splice(i,1)
+  save()
+}
+
+/* NEW DAY CUSTOM POPUP */
+function startNewDay(){
+  dayBox.style.display="flex"
+}
+function closeDay(){
+  dayBox.style.display="none"
+}
+function confirmDay(){
+  data={token:1,records:[]}
+  closeDay()
+  save()
+}
+
+function exportCSV() {
+  let total = 0;
+
+  let csv = "Clinic OPD Report\n";
+  csv += "Date,Token,Patient Name,Mobile,Status,Fees\n";
+
+  data.records.forEach(r => {
+    let d = new Date(r.date).toLocaleDateString("en-IN");
+    csv += `${d},${r.token},${r.name},${r.mobile},${r.status},${r.fees}\n`;
+    total += Number(r.fees || 0);
+  });
+
+  csv += "\n";
+  csv += `Total Collection,,,,,₹ ${total}`;
+
+  let a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = "clinic-report.csv";
+  a.click();
+}
+
+
+const totalSpan=document.getElementById("total")
+render()
+</script>
+<script>
+/* ===== PAYMENT CONTROL ===== */
+/* फक्त तारीख बदलायची */
+
+const PAID_TILL = "2026-01-31"; // yyyy-mm-dd
+
+/* ===== खाली काहीही बदलू नको ===== */
+
+const today = new Date().toISOString().split("T")[0];
+
+if (today > PAID_TILL) {
+  document.body.innerHTML = `
+    <div style="
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      height:100vh;
+      font-family:system-ui;
+      background:#f3f4f6;
+      text-align:center;
+    ">
+      <div>
+        <h2>Payment Pending</h2>
+        <p>Please contact admin</p>
+      </div>
+    </div>
+  `;
+}
+</script>
+
+</body>
+</html>
