@@ -172,7 +172,9 @@ function save(){
 function addPatient(){
   if(!pname.value.trim()) return
   data.records.push({
-    date:new Date().toLocaleDateString(),
+    
+    date: new Date().toISOString(),
+
     token:data.token++,
     name:pname.value,
     mobile:pmobile.value,
@@ -304,3 +306,4 @@ if (today > PAID_TILL) {
 
 </body>
 </html>
+
